@@ -179,7 +179,7 @@ func main() {
 			fmt.Println("You lost.")
 			return
 		} else if gameCondition==4 {
-			fmt.Println("Stalemate. It is a draw.")
+			fmt.Println("Stalemate.")
 			return
 		}
 		var f string
@@ -187,7 +187,7 @@ func main() {
 		fmt.Scan(&f)
 		fx := int(f[0])-97
 		fy := 56-int(f[1])
-		sendInput("/inputFrom", fx, fy)
+		sendInput("/inputSource", fx, fy)
 		waitProcessing()
 		legalBoard = fetchBoard("/getLegalBoard")
 		fmt.Println("10")
@@ -198,19 +198,19 @@ func main() {
 		fmt.Scan(&t)
 		tx := int(t[0])-97
 		ty := 56-int(t[1])
-		err := sendInput("/inputTo", tx, ty)
+		err := sendInput("/inputTarget", tx, ty)
 		for err!=nil {
 			fmt.Println(err)
 			fmt.Println("From:")
 			fmt.Scan(&f)
 			fx = int(f[0])-97
 			fy = 56-int(f[1])
-			sendInput("/inputFrom", fx, fy)
+			sendInput("/inputSource", fx, fy)
 			fmt.Println("To:")
 			fmt.Scan(&t)
 			tx := int(t[0])-97
 			ty := 56-int(t[1])
-			err = sendInput("/inputTo", tx, ty)
+			err = sendInput("/inputTarget", tx, ty)
 		}
 		waitProcessing()
 		figureBoard = fetchBoard("/getFigureBoard")

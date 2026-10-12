@@ -40,9 +40,9 @@ const (
 )
 
 type Field struct {
-	figure     Figure
-	color     Color
-	x, y          int
+	figure Figure
+	color  Color
+	x, y   int
 }
 
 type Coord struct {
@@ -51,7 +51,7 @@ type Coord struct {
 }
 
 type Player struct {
-	color Color
+	color        Color
 	kingPosition Coord
 }
 
@@ -80,13 +80,15 @@ func (c Color) forward() int {
 	return 1
 }
 
-//move to utility.go
+// TODO: move this helper to utility.go.
 func abs(x int) int {
-	if x < 0 { return -x}
+	if x < 0 {
+		return -x
+	}
 	return x
 }
 
-//func withinReach
+// func withinReach
 func isCheck(board Board, turnColor Color, kingPosition [3]Coord) bool {
 	//is there a check for a turnColor side in a given position?
 	king := board[kingPosition[turnColor].X][kingPosition[turnColor].Y]
@@ -169,37 +171,35 @@ func isCheck(board Board, turnColor Color, kingPosition [3]Coord) bool {
 	return false
 }
 
-//revised
-func move(board *Board, fromCoord, toCoord Coord) error {
-	from, to := &board[fromCoord.X][fromCoord.Y], &board[toCoord.X][toCoord.Y]
-	to.figure, to.color = from.figure, from.color
-	from.figure, from.color = NoFigure, NoColor
-	//a pawn that reaches the last row becomes a queen
-	if to.figure == Pawn && (toCoord.Y == 0 || toCoord.Y == 7) {
-		to.figure = Queen
+func move(board *Board, sourceCoord, targetCoord Coord) error {
+	source := &board[sourceCoord.X][sourceCoord.Y]
+	target := &board[targetCoord.X][targetCoord.Y]
+	target.figure, target.color = source.figure, source.color
+	source.figure, source.color = NoFigure, NoColor
+
+	//pawn that reaches the last rank is promoted to a queen
+	if target.figure == Pawn && (targetCoord.Y == 0 || targetCoord.Y == 7) {
+		target.figure = Queen
 	}
 	return nil
 }
 
-//revised
-func isMoveLegal(toCoord Coord, legalTargets []Coord) bool {
-	for _, v := range legalTargets {
-		if toCoord == v {
+func isMoveLegal(targetCoord Coord, legalTargets []Coord) bool {
+	for _, legalTarget := range legalTargets {
+		if targetCoord == legalTarget {
 			return true
 		}
 	}
 	return false
 }
 
-//revised, but depends on getlegalTargets
-func haslegalTargets(board Board, turnColor Color, kingPosition [3]Coord) bool {
+//returns true if at least one piece has at least one legal target
+func hasLegalTargets(board Board, turnColor Color, kingPosition [3]Coord) bool {
 	for x := 0; x < 8; x++ {
 		for y := 0; y < 8; y++ {
-			//check if at least any of one's pieces has legal moves
-			field := board[x][y]
-			if field.figure != NoFigure && field.color == turnColor {
-				legalTargets := getlegalTargets(board, &board[x][y], turnColor, kingPosition);
-				if len(legalTargets) >= 1 {
+			source := &board[x][y]
+			if source.figure != NoFigure && source.color == turnColor {
+				if len(getLegalTargets(board, source, turnColor, kingPosition)) > 0 {
 					return true
 				}
 			}
@@ -220,7 +220,6 @@ func bold(r rune) rune {
 
 const figureRunes = " pbnrqk"
 
-//revised
 func (f Field) Rune() rune {
 	r := rune(figureRunes[f.figure])
 	if f.color == Black {
@@ -229,10 +228,9 @@ func (f Field) Rune() rune {
 	return r
 }
 
-//revised
 func toRunes(board Board, legalTargets []Coord) [8][8]rune {
 	var out [8][8]rune
-	for x :=0; x < 8; x++ {
+	for x := 0; x < 8; x++ {
 		for y := 0; y < 8; y++ {
 			out[x][y] = board[x][y].Rune()
 		}
@@ -247,8 +245,7 @@ func toRunes(board Board, legalTargets []Coord) [8][8]rune {
 	return out
 }
 
-//revised
-func renderBoard(board Board, legalTargets ...Coord){
+func renderBoard(board Board, legalTargets ...Coord) {
 	runeBoard := toRunes(board, legalTargets)
 	for y := 0; y < 8; y++ {
 		for x := 0; x < 8; x++ {
@@ -258,68 +255,71 @@ func renderBoard(board Board, legalTargets ...Coord){
 	}
 }
 
-//perhaps could rework
-func trivialValidation(from, to Field, turnColor Color) bool {
-	if to.color == turnColor || from.figure == NoFigure || from.color != turnColor {
-		return false
-	}
-	return true
+func trivialMoveValidation(source, target *Field, turnColor Color) bool {
+	return target.color != turnColor && source.figure != NoFigure && source.color == turnColor
 }
 
-func getlegalTargets(board Board, from Field, turnColor Color, kingPosition [3]Coord) []Coord {
+func getLegalTargets(board Board, source *Field, turnColor Color, kingPosition [3]Coord) []Coord {
 	var legalTargets []Coord
-	var to Field
 
-	switch from.figure {
+	appendIfLegal := func(targetX, targetY int) {
+		targetCoord := Coord{X: targetX, Y: targetY}
+		if !targetCoord.InBounds() {
+			return
+		}
+		target := &board[targetX][targetY]
+		if !trivialMoveValidation(source, target, turnColor) {
+			return
+		}
+		if isCheckAfterMove(board, source, target, kingPosition, turnColor) {
+			return
+		}
+		legalTargets = append(legalTargets, targetCoord)
+	}
+
+	switch source.figure {
 	case Pawn:
 		yDirection := turnColor.forward()
-		for dx := -1; dx <= 1; dx++ {
-			for dy := yDirection; dy <= abs(yDirection*2); dy += yDirection {
-				newX := from.x + dx
-				newY := from.y + dy
-				to := board[newX][newY]
-
-				if !trivialValidation(from, to, turnColor){
+		startRank := 1
+		if turnColor == White {
+			startRank = 6
+		}
+		for step := 1; step <= 2; step++ {
+			dy := step * yDirection
+			for dx := -1; dx <= 1; dx++ {
+				targetX, targetY := source.x+dx, source.y+dy
+				coord := Coord{X: targetX, Y: targetY}
+				if !coord.InBounds() {
 					continue
 				}
-
-				//if pawn eats, its dy must be just 1
-				//pawn may move forward by 2 only if it moves from the starting position
-				//if pawn moves sideways, it has to eat a figure
-				//
-				if (dx != 0 && abs(dy) == 2) ||
-					(dy == 2 && from.y != 1) ||
-					(dy == -2 && from.y != 6) ||
-					(dx != 0 && to.figure == NoFigure) ||
-					(dx == 0 && to.figure != NoFigure) ||
-					(abs(dy) == 2 && board[from.x][from.y+yDirection].figure != NoFigure) {
+				target := &board[targetX][targetY]
+				if !trivialMoveValidation(source, target, turnColor) {
 					continue
 				}
-
-				if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-					legalTargets = append(legalTargets, Coord{X: newX, Y: newY})
+				//pawns move straight, capture diagonally, and may advance two
+				//squares only from their starting rank with a clear path.
+				if dx == 0 && target.figure != NoFigure {
+					continue
+				}
+				if dx != 0 && target.figure == NoFigure {
+					continue
+				}
+				if step == 2 && (dx != 0 || source.y != startRank || board[source.x][source.y+yDirection].figure != NoFigure) {
+					continue
+				}
+				if !isCheckAfterMove(board, source, target, kingPosition, turnColor) {
+					legalTargets = append(legalTargets, coord)
 				}
 			}
 		}
 
 	case Knight:
-		for i := 1; i <= 2; i++ {
-			for j := -1; j <= 1; j += 2 {
-				for c := -1; c <= 1; c += 2 {
-					dx := i * j
-					dy := (3 - i) * c
-					newX := from.x + dx
-					newY := from.y + dy
-
-					if !(Coord{X: newX, Y: newY}).InBounds() || !trivialValidation(board, from, &board[newX][newY], turnColor) {
-						continue
-					}
-
-					to = board[newX][newY]
-
-					if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-						legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
-					}
+		for longStep := 1; longStep <= 2; longStep++ {
+			for _, xSign := range []int{-1, 1} {
+				for _, ySign := range []int{-1, 1} {
+					dx := longStep * xSign
+					dy := (3 - longStep) * ySign
+					appendIfLegal(source.x+dx, source.y+dy)
 				}
 			}
 		}
@@ -330,134 +330,36 @@ func getlegalTargets(board Board, from Field, turnColor Color, kingPosition [3]C
 				if dx == 0 && dy == 0 {
 					continue
 				}
-
-				newX := from.x + dx
-				newY := from.y + dy
-
-				if !(Coord{X: newX, Y: newY}).InBounds() || !trivialValidation(board, from, &board[newX][newY], turnColor) {
-					continue
-				}
-
-				to = board[newX][newY]
-
-				if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-					legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
-				}
+				appendIfLegal(source.x+dx, source.y+dy)
 			}
 		}
 
-	case Bishop:
-		for dx := -1; dx <= 1; dx += 2 {
-			for dy := -1; dy <= 1; dy += 2 {
-				for x, y := from.x+dx, from.y+dy; x <= 7 && x >= 0 && y <= 7 && y >= 0; x, y = x+dx, y+dy {
-					to = board[x][y]
-
-					if !trivialValidation(board, from, &to, turnColor) {
-						break
-					}
-
-					if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-						legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
-					}
-
-					if to.figure != NoFigure {
-						break
-					}
+	case Bishop, Rook, Queen:
+		directions := make([]Coord, 0, 8)
+		if source.figure == Bishop || source.figure == Queen {
+			for dx := -1; dx <= 1; dx += 2 {
+				for dy := -1; dy <= 1; dy += 2 {
+					directions = append(directions, Coord{X: dx, Y: dy})
 				}
 			}
 		}
-
-	case Rook:
-		for d := -1; d <= 1; d += 2 {
-			// Horizontal
-			for dx := d; from.x+dx <= 7 && from.x+dx >= 0; dx += d {
-				to = board[from.x+dx][from.y]
-
-				if !trivialValidation(board, from, &to, turnColor) {
-					break
-				}
-
-				if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-					legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
-				}
-
-				if to.figure != NoFigure {
-					break
-				}
-			}
-
-			// Vertical
-			for dy := d; from.y+dy <= 7 && from.y+dy >= 0; dy += d {
-				to = board[from.x][from.y+dy]
-
-				if !trivialValidation(board, from, &to, turnColor) {
-					break
-				}
-
-				if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-					legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
-				}
-
-				if to.figure != NoFigure {
-					break
-				}
-			}
+		if source.figure == Rook || source.figure == Queen {
+			directions = append(directions,
+				Coord{X: -1, Y: 0}, Coord{X: 1, Y: 0},
+				Coord{X: 0, Y: -1}, Coord{X: 0, Y: 1},
+			)
 		}
-
-	case Queen:
-		for d := -1; d <= 1; d += 2 {
-			// Horizontal
-			for dx := d; from.x+dx <= 7 && from.x+dx >= 0; dx += d {
-				to = board[from.x+dx][from.y]
-
-				if !trivialValidation(board, from, &to, turnColor) {
+		for _, direction := range directions {
+			for x, y := source.x+direction.X, source.y+direction.Y; (Coord{X: x, Y: y}).InBounds(); x, y = x+direction.X, y+direction.Y {
+				target := &board[x][y]
+				if !trivialMoveValidation(source, target, turnColor) {
 					break
 				}
-
-				if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-					legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
+				if !isCheckAfterMove(board, source, target, kingPosition, turnColor) {
+					legalTargets = append(legalTargets, Coord{X: x, Y: y})
 				}
-
-				if to.figure != NoFigure {
+				if target.figure != NoFigure {
 					break
-				}
-			}
-
-			// Vertical
-			for dy := d; from.y+dy <= 7 && from.y+dy >= 0; dy += d {
-				to = board[from.x][from.y+dy]
-
-				if !trivialValidation(board, from, &to, turnColor) {
-					break
-				}
-
-				if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-					legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
-				}
-
-				if to.figure != NoFigure {
-					break
-				}
-			}
-		}
-
-		// Diagonals
-		for dx := -1; dx <= 1; dx += 2 {
-			for dy := -1; dy <= 1; dy += 2 {
-				for x, y := from.x+dx, from.y+dy; x <= 7 && x >= 0 && y <= 7 && y >= 0; x, y = x+dx, y+dy {
-					to = board[x][y]
-
-					if !trivialValidation(board, from, &to, turnColor) {
-						break
-					}
-
-					if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-						legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
-					}
-
-					if to.figure != NoFigure {
-						break
-					}
 				}
 			}
 		}
@@ -466,13 +368,17 @@ func getlegalTargets(board Board, from Field, turnColor Color, kingPosition [3]C
 	return legalTargets
 }
 
-func isCheckAfterMove(board Board, from, to *Field, kingPosition [3]Coord, turnColor Color) bool {
-	boardMoved := board
-	move(&boardMoved, Coord{X: from.x, Y: from.y}, Coord{X: to.x, Y: to.y})
-	if boardMoved[to.x][to.y].figure == King {
-		kingPosition[boardMoved[to.x][to.y].color] = Coord{X: to.x, Y: to.y}
+func isCheckAfterMove(board Board, source, target *Field, kingPosition [3]Coord, turnColor Color) bool {
+	boardAfterMove := board
+	move(&boardAfterMove,
+		Coord{X: source.x, Y: source.y},
+		Coord{X: target.x, Y: target.y},
+	)
+	movedTarget := boardAfterMove[target.x][target.y]
+	if movedTarget.figure == King {
+		kingPosition[movedTarget.color] = Coord{X: target.x, Y: target.y}
 	}
-	return isCheck(boardMoved, turnColor, kingPosition)
+	return isCheck(boardAfterMove, turnColor, kingPosition)
 }
 func initialiseBoard(board *Board) error {
 	for y := 0; y < 8; y++ {
@@ -512,7 +418,7 @@ func declareWin(turnColor Color) {
 	}
 }
 
-// codes the client gets from /gameCondition
+// codes the client gets source /gameCondition
 const (
 	condNormal = iota
 	condCheck
@@ -523,19 +429,19 @@ const (
 
 // Game is everything the handlers share. Every handler locks mu first.
 type Game struct {
-	mu         sync.Mutex
-	turnChange *sync.Cond // wakes up waiting players when the turn changes or the game ends
-	board      Board
-	turn       Color
-	kingPos    [3]Coord
-	tokens     [3]string
-	players    int
-	from       Coord   // the piece chosen with /inputFrom
-	hasFrom    bool
-	legalTargets []Coord // legal moves of that piece
-	inCheck    bool    // is the side to move in check
-	over       bool
-	winner     Color // NoColor if the game ended in a stalemate
+	mu           sync.Mutex
+	turnChange   *sync.Cond //wakes up waiting players when the turn changes or the game ends
+	board        Board
+	turn         Color
+	kingPos      [3]Coord
+	tokens       [3]string
+	players      int
+	source       Coord //the piece chosen with /inputSource
+	hasSource    bool
+	legalTargets []Coord //legal moves of that piece
+	inCheck      bool    //is the side to move in check
+	over         bool
+	winner       Color //NoColor if a stalemate
 }
 
 func newGame() *Game {
@@ -547,16 +453,18 @@ func newGame() *Game {
 	return g
 }
 
+//generate a random token
 func newToken() string {
 	b := make([]byte, 32)
 	rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
-// playerColor finds the player by the X-Token header. NoColor means unknown player.
+//playerColor finds the player by the X-Token header
 func (g *Game) playerColor(c *gin.Context) Color {
 	t := c.GetHeader("X-Token")
 	if t == "" {
+        //unidentified
 		return NoColor
 	}
 	if t == g.tokens[White] {
@@ -575,22 +483,43 @@ func reject(c *gin.Context, message string) {
 func (g *Game) joinGame(c *gin.Context) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.players == 2 {
-		c.JSON(400, gin.H{"error": "Game full"})
+
+	if g.players >= 2 {
+		c.JSON(400, gin.H{"error": "Game is full"})
 		return
 	}
-	color := White //first player is white, second is black
-	if g.players == 1 {
-		color = Black
+	var color Color
+	if g.players == 0 {
+		var b [1]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			c.JSON(500, gin.H{"error": "Failed to assign player color"})
+			return
+		}
+		if b[0]%2 == 1 {
+			color = Black
+		} else {    
+            color = White
+        }
+	} else {
+		//the second player is of the opposite color.
+		if g.tokens[White] != "" {
+			color = Black
+		} else {
+			color = White
+		}
 	}
 	g.players++
 	g.tokens[color] = newToken()
-	c.JSON(200, gin.H{"colorWhite": color == White, "token": g.tokens[color]})
+
+	c.JSON(200, gin.H{
+		"colorWhite": color == White,
+		"token":      g.tokens[color],
+	})
 	fmt.Println(c.ClientIP() + " joined the game")
 }
 
-// readCoord does the checks /inputFrom and /inputTo share. If the input has to be
-// rejected it answers the request itself and returns false.
+//readCoord does the checks /inputSource and /inputTarget share. If the input has to be
+//rejected it answers the request itself and returns false.
 func (g *Game) readCoord(c *gin.Context) (Coord, bool) {
 	var pos Coord
 	if err := c.ShouldBindJSON(&pos); err != nil {
@@ -603,14 +532,14 @@ func (g *Game) readCoord(c *gin.Context) (Coord, bool) {
 	case g.playerColor(c) != g.turn:
 		reject(c, "It is currently not your turn")
 	case !pos.InBounds():
-		reject(c, "That square is outside the board")
+		reject(c, "That square is outside of the board")
 	default:
 		return pos, true
 	}
 	return pos, false
 }
 
-func (g *Game) inputFrom(c *gin.Context) {
+func (g *Game) inputSource(c *gin.Context) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	pos, ok := g.readCoord(c)
@@ -619,45 +548,47 @@ func (g *Game) inputFrom(c *gin.Context) {
 	}
 	field := g.board.At(pos)
 	if field.figure == NoFigure || field.color != g.turn {
-		g.hasFrom = false
+		g.hasSource = false
 		g.legalTargets = nil
 		reject(c, "That is not your piece")
 		return
 	}
-	g.from = pos
-	g.hasFrom = true
-	g.legalTargets = getlegalTargets(g.board, &g.board[pos.X][pos.Y], g.turn, g.kingPos)
+	g.source = pos
+	g.hasSource = true
+	g.legalTargets = getLegalTargets(g.board, &g.board[pos.X][pos.Y], g.turn, g.kingPos)
 	c.JSON(200, gin.H{"status": "ok"})
 }
 
-func (g *Game) inputTo(c *gin.Context) {
+func (g *Game) inputTarget(c *gin.Context) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	to, ok := g.readCoord(c)
+	target, ok := g.readCoord(c)
 	if !ok {
 		return
 	}
-	if !g.hasFrom || !isMoveLegal(to, g.legalTargets) {
+	if !g.hasSource || !isMoveLegal(target, g.legalTargets) {
 		reject(c, "Invalid move")
 		return
 	}
-	g.play(to)
+	g.play(target)
 	c.JSON(200, gin.H{"status": "ok"})
 }
 
-// play makes the move chosen with /inputFrom and works out what it means for the opponent.
-func (g *Game) play(to Coord) {
-	move(&g.board, g.from, to)
-	if g.board.At(to).figure == King {
-		g.kingPos[g.turn] = to
+// play makes the move chosen with /inputSource and works out what it means for the opponent
+func (g *Game) play(target Coord) {
+	move(&g.board, g.source, target)
+    //if a player moves the king, update its coordinates
+	if g.board.At(target).figure == King {
+		g.kingPos[g.turn] = target
 	}
-	g.hasFrom = false
+	g.hasSource = false
 	g.legalTargets = nil
 	renderBoard(g.board)
 
 	opponent := g.turn.opponent()
 	g.inCheck = isCheck(g.board, opponent, g.kingPos)
-	if !haslegalTargets(g.board, opponent, g.kingPos) {
+    //if there are no legal moves, game is over
+	if !hasLegalTargets(g.board, opponent, g.kingPos) {
 		g.over = true
 		if g.inCheck {
 			g.winner = g.turn //checkmate, otherwise it is a stalemate and winner stays NoColor
@@ -668,7 +599,7 @@ func (g *Game) play(to Coord) {
 	g.turnChange.Broadcast()
 }
 
-// queryChanged blocks until it is the caller's turn (or the game is over).
+//queryChanged blocks until it is the caller's turn (or the game is over)
 func (g *Game) queryChanged(c *gin.Context) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -721,14 +652,12 @@ func main() {
 	g := newGame()
 	router := gin.Default()
 	router.POST("/joinGame", g.joinGame)
-	router.POST("/inputFrom", g.inputFrom)
-	router.POST("/inputTo", g.inputTo)
+	router.POST("/inputSource", g.inputSource)
+	router.POST("/inputTarget", g.inputTarget)
 	router.GET("/getFigureBoard", g.figureBoard)
 	router.GET("/getLegalBoard", g.legalBoard)
 	router.GET("/queryChanged", g.queryChanged)
 	router.GET("/gameCondition", g.gameCondition)
-	//moves are processed before /inputTo answers, so there is nothing to wait for any more.
-	//The route stays so the client keeps working.
 	router.GET("/doneProcessing", func(c *gin.Context) {
 		c.JSON(200, gin.H{"isDone": true})
 	})
