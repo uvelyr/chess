@@ -72,7 +72,7 @@ func (c Color) opponent() Color {
 	return White
 }
 
-// forward is the pawn's direction along y: white moves up the board (y decreases)
+//forward is where the player's pawns go along y
 func (c Color) forward() int {
 	if c == White {
 		return -1
@@ -182,8 +182,8 @@ func move(board *Board, fromCoord, toCoord Coord) error {
 }
 
 //revised
-func isMoveLegal(toCoord Coord, legalMoves []Coord) bool {
-	for _, v := range legalMoves {
+func isMoveLegal(toCoord Coord, legalTargets []Coord) bool {
+	for _, v := range legalTargets {
 		if toCoord == v {
 			return true
 		}
@@ -191,15 +191,15 @@ func isMoveLegal(toCoord Coord, legalMoves []Coord) bool {
 	return false
 }
 
-//revised, but depends on getLegalMoves
-func hasLegalMoves(board Board, turnColor Color, kingPosition [3]Coord) bool {
+//revised, but depends on getlegalTargets
+func haslegalTargets(board Board, turnColor Color, kingPosition [3]Coord) bool {
 	for x := 0; x < 8; x++ {
 		for y := 0; y < 8; y++ {
 			//check if at least any of one's pieces has legal moves
 			field := board[x][y]
 			if field.figure != NoFigure && field.color == turnColor {
-				legalMoves := getLegalMoves(board, &board[x][y], turnColor, kingPosition);
-				if len(legalMoves) >= 1 {
+				legalTargets := getlegalTargets(board, &board[x][y], turnColor, kingPosition);
+				if len(legalTargets) >= 1 {
 					return true
 				}
 			}
@@ -230,14 +230,14 @@ func (f Field) Rune() rune {
 }
 
 //revised
-func toRunes(board Board, legalMoves []Coord) [8][8]rune {
+func toRunes(board Board, legalTargets []Coord) [8][8]rune {
 	var out [8][8]rune
 	for x :=0; x < 8; x++ {
 		for y := 0; y < 8; y++ {
 			out[x][y] = board[x][y].Rune()
 		}
 	}
-	for _, t := range legalMoves {
+	for _, t := range legalTargets {
 		if board.At(t).figure == NoFigure {
 			out[t.X][t.Y] = '+'
 		} else {
@@ -248,8 +248,8 @@ func toRunes(board Board, legalMoves []Coord) [8][8]rune {
 }
 
 //revised
-func renderBoard(board Board, legalMoves ...Coord){
-	runeBoard := toRunes(board, legalMoves)
+func renderBoard(board Board, legalTargets ...Coord){
+	runeBoard := toRunes(board, legalTargets)
 	for y := 0; y < 8; y++ {
 		for x := 0; x < 8; x++ {
 			fmt.Printf("%c", runeBoard[x][y])
@@ -258,30 +258,35 @@ func renderBoard(board Board, legalMoves ...Coord){
 	}
 }
 
-func trivialValidation(board Board, from, to *Field, turnColor Color) bool {
+//perhaps could rework
+func trivialValidation(from, to Field, turnColor Color) bool {
 	if to.color == turnColor || from.figure == NoFigure || from.color != turnColor {
 		return false
 	}
 	return true
 }
-func getLegalMoves(board Board, from *Field, turnColor Color, kingPosition [3]Coord) []Coord {
-	var legalMoves []Coord
+
+func getlegalTargets(board Board, from Field, turnColor Color, kingPosition [3]Coord) []Coord {
+	var legalTargets []Coord
 	var to Field
 
 	switch from.figure {
 	case Pawn:
 		yDirection := turnColor.forward()
 		for dx := -1; dx <= 1; dx++ {
-			for dy := yDirection; dy != yDirection*3; dy += yDirection {
+			for dy := yDirection; dy <= abs(yDirection*2); dy += yDirection {
 				newX := from.x + dx
 				newY := from.y + dy
+				to := board[newX][newY]
 
-				if !(Coord{X: newX, Y: newY}).InBounds() || !trivialValidation(board, from, &board[newX][newY], turnColor) {
+				if !trivialValidation(from, to, turnColor){
 					continue
 				}
 
-				to := board[newX][newY]
-
+				//if pawn eats, its dy must be just 1
+				//pawn may move forward by 2 only if it moves from the starting position
+				//if pawn moves sideways, it has to eat a figure
+				//
 				if (dx != 0 && abs(dy) == 2) ||
 					(dy == 2 && from.y != 1) ||
 					(dy == -2 && from.y != 6) ||
@@ -292,7 +297,7 @@ func getLegalMoves(board Board, from *Field, turnColor Color, kingPosition [3]Co
 				}
 
 				if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-					legalMoves = append(legalMoves, Coord{X: newX, Y: newY})
+					legalTargets = append(legalTargets, Coord{X: newX, Y: newY})
 				}
 			}
 		}
@@ -313,7 +318,7 @@ func getLegalMoves(board Board, from *Field, turnColor Color, kingPosition [3]Co
 					to = board[newX][newY]
 
 					if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-						legalMoves = append(legalMoves, Coord{X: to.x, Y: to.y})
+						legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
 					}
 				}
 			}
@@ -336,7 +341,7 @@ func getLegalMoves(board Board, from *Field, turnColor Color, kingPosition [3]Co
 				to = board[newX][newY]
 
 				if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-					legalMoves = append(legalMoves, Coord{X: to.x, Y: to.y})
+					legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
 				}
 			}
 		}
@@ -352,7 +357,7 @@ func getLegalMoves(board Board, from *Field, turnColor Color, kingPosition [3]Co
 					}
 
 					if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-						legalMoves = append(legalMoves, Coord{X: to.x, Y: to.y})
+						legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
 					}
 
 					if to.figure != NoFigure {
@@ -373,7 +378,7 @@ func getLegalMoves(board Board, from *Field, turnColor Color, kingPosition [3]Co
 				}
 
 				if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-					legalMoves = append(legalMoves, Coord{X: to.x, Y: to.y})
+					legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
 				}
 
 				if to.figure != NoFigure {
@@ -390,7 +395,7 @@ func getLegalMoves(board Board, from *Field, turnColor Color, kingPosition [3]Co
 				}
 
 				if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-					legalMoves = append(legalMoves, Coord{X: to.x, Y: to.y})
+					legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
 				}
 
 				if to.figure != NoFigure {
@@ -410,7 +415,7 @@ func getLegalMoves(board Board, from *Field, turnColor Color, kingPosition [3]Co
 				}
 
 				if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-					legalMoves = append(legalMoves, Coord{X: to.x, Y: to.y})
+					legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
 				}
 
 				if to.figure != NoFigure {
@@ -427,7 +432,7 @@ func getLegalMoves(board Board, from *Field, turnColor Color, kingPosition [3]Co
 				}
 
 				if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-					legalMoves = append(legalMoves, Coord{X: to.x, Y: to.y})
+					legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
 				}
 
 				if to.figure != NoFigure {
@@ -447,7 +452,7 @@ func getLegalMoves(board Board, from *Field, turnColor Color, kingPosition [3]Co
 					}
 
 					if !isCheckAfterMove(board, from, &to, kingPosition, turnColor) {
-						legalMoves = append(legalMoves, Coord{X: to.x, Y: to.y})
+						legalTargets = append(legalTargets, Coord{X: to.x, Y: to.y})
 					}
 
 					if to.figure != NoFigure {
@@ -458,7 +463,7 @@ func getLegalMoves(board Board, from *Field, turnColor Color, kingPosition [3]Co
 		}
 	}
 
-	return legalMoves
+	return legalTargets
 }
 
 func isCheckAfterMove(board Board, from, to *Field, kingPosition [3]Coord, turnColor Color) bool {
@@ -527,7 +532,7 @@ type Game struct {
 	players    int
 	from       Coord   // the piece chosen with /inputFrom
 	hasFrom    bool
-	legalMoves []Coord // legal moves of that piece
+	legalTargets []Coord // legal moves of that piece
 	inCheck    bool    // is the side to move in check
 	over       bool
 	winner     Color // NoColor if the game ended in a stalemate
@@ -615,13 +620,13 @@ func (g *Game) inputFrom(c *gin.Context) {
 	field := g.board.At(pos)
 	if field.figure == NoFigure || field.color != g.turn {
 		g.hasFrom = false
-		g.legalMoves = nil
+		g.legalTargets = nil
 		reject(c, "That is not your piece")
 		return
 	}
 	g.from = pos
 	g.hasFrom = true
-	g.legalMoves = getLegalMoves(g.board, &g.board[pos.X][pos.Y], g.turn, g.kingPos)
+	g.legalTargets = getlegalTargets(g.board, &g.board[pos.X][pos.Y], g.turn, g.kingPos)
 	c.JSON(200, gin.H{"status": "ok"})
 }
 
@@ -632,7 +637,7 @@ func (g *Game) inputTo(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !g.hasFrom || !isMoveLegal(to, g.legalMoves) {
+	if !g.hasFrom || !isMoveLegal(to, g.legalTargets) {
 		reject(c, "Invalid move")
 		return
 	}
@@ -647,12 +652,12 @@ func (g *Game) play(to Coord) {
 		g.kingPos[g.turn] = to
 	}
 	g.hasFrom = false
-	g.legalMoves = nil
+	g.legalTargets = nil
 	renderBoard(g.board)
 
 	opponent := g.turn.opponent()
 	g.inCheck = isCheck(g.board, opponent, g.kingPos)
-	if !hasLegalMoves(g.board, opponent, g.kingPos) {
+	if !haslegalTargets(g.board, opponent, g.kingPos) {
 		g.over = true
 		if g.inCheck {
 			g.winner = g.turn //checkmate, otherwise it is a stalemate and winner stays NoColor
@@ -709,7 +714,7 @@ func (g *Game) figureBoard(c *gin.Context) {
 func (g *Game) legalBoard(c *gin.Context) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	c.JSON(200, gin.H{"board": toRunes(g.board, g.legalMoves)})
+	c.JSON(200, gin.H{"board": toRunes(g.board, g.legalTargets)})
 }
 
 func main() {

@@ -56,7 +56,7 @@ func sendInput(endpoint string, x, y int) error {
 	if res.Status == "invalid" {
 		return inputError("Invalid move")
 	} else {
-		 return nil
+		return nil
 	}
 }
 type InputResponse struct {
