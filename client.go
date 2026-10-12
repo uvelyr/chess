@@ -45,11 +45,7 @@ func (e inputError) Error() string {
 
 func sendInput(endpoint string, x, y int) error {
 	data := []byte(fmt.Sprintf(`{"x":%d,"y":%d}`, x, y))
-	resp, err := http.Post(
-		url+endpoint,
-		"application/json",
-		bytes.NewBuffer(data),
-	)
+	resp, err := do("POST", endpoint, data)
 	if err != nil {
 		panic(err)
 	}
@@ -74,6 +70,18 @@ type QueryResponse struct {
 }
 type ColorResponse struct {
 	ColorWhite bool `json:"colorWhite"`
+	Token string `json:"token"`
+}
+var token string
+//same as http.Get/Post but sends our token, so server knows who we are
+func do(method, endpoint string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequest(method, url+endpoint, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Token", token)
+	return http.DefaultClient.Do(req)
 }
 type ConditionResponse struct {
 	Condition int `json:"condition"`
@@ -93,6 +101,7 @@ func getColor() bool {
 	body, _ := ioutil.ReadAll(resp.Body)
 	var res ColorResponse
 	json.Unmarshal(body, &res)
+	token = res.Token
 	if resp.StatusCode == 200 {
 		if res.ColorWhite {
 			fmt.Println("You are playing white")
@@ -124,10 +133,10 @@ func waitProcessing() {
 	http.Get(url+"/doneProcessing")
 }
 func waitQuery() {
-	http.Get(url+"/queryChanged")
+	do("GET", "/queryChanged", nil)
 }
 func getGameCondition() int {
-	resp, err := http.Get(url+"/gameCondition")
+	resp, err := do("GET", "/gameCondition", nil)
 	if err != nil {
 		panic(err)
 	}
@@ -168,6 +177,9 @@ func main() {
 		} else if gameCondition==2 {
 			fmt.Println("Mate.")
 			fmt.Println("You lost.")
+			return
+		} else if gameCondition==4 {
+			fmt.Println("Stalemate. It is a draw.")
 			return
 		}
 		var f string
