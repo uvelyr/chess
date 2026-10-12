@@ -1,4 +1,5 @@
 *.swp
 *.save
 *.exe
-
+singleplayer/
+singleplayer

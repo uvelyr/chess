@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"sync"
 	"unicode"
+	"log"
 )
 
 type Color int
@@ -73,11 +74,15 @@ func (c Color) opponent() Color {
 }
 
 //forward is where the player's pawns go along y
-func (c Color) forward() int {
-	if c == White {
-		return -1
-	}
-	return 1
+func (c Color) forward() (int, error) {
+    switch c {
+    case White:
+        return -1, nil
+    case Black:
+        return 1, nil
+    default:
+        return 0, fmt.Errorf("invalid color: %d", c)
+    }
 }
 
 // TODO: move this helper to utility.go.
@@ -95,12 +100,16 @@ func isCheck(board Board, turnColor Color, kingPosition [3]Coord) bool {
 	//checking pawns
 	var pawn1 Field
 	var pawn2 Field
-	if king.y+turnColor.forward() >= 0 && king.y+turnColor.forward() <= 7 {
+	forward, err := turnColor.forward()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if king.y+forward >= 0 && king.y+forward <= 7 {
 		if king.x-1 >= 0 {
-			pawn1 = board[king.x-1][king.y+turnColor.forward()]
+			pawn1 = board[king.x-1][king.y+forward]
 		}
 		if king.x+1 <= 7 {
-			pawn2 = board[king.x+1][king.y+turnColor.forward()]
+			pawn2 = board[king.x+1][king.y+forward]
 		}
 	}
 	if (pawn1.figure != 0 && pawn1.figure == Pawn && pawn1.color != turnColor) || (pawn2.figure != 0 && pawn2.figure == Pawn && pawn2.color != turnColor) {
@@ -279,7 +288,10 @@ func getLegalTargets(board Board, source *Field, turnColor Color, kingPosition [
 
 	switch source.figure {
 	case Pawn:
-		yDirection := turnColor.forward()
+		yDirection, err := turnColor.forward()
+		if err != nil {
+			log.Fatal(err)
+		}
 		startRank := 1
 		if turnColor == White {
 			startRank = 6
