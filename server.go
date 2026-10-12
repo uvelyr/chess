@@ -5,9 +5,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"log"
 	"sync"
 	"unicode"
-	"log"
 )
 
 type Color int
@@ -41,9 +41,10 @@ const (
 )
 
 type Field struct {
-	figure Figure
-	color  Color
-	x, y   int
+	figure   Figure
+	color    Color
+	x, y     int
+	hasMoved bool
 }
 
 type Coord struct {
@@ -73,16 +74,16 @@ func (c Color) opponent() Color {
 	return White
 }
 
-//forward is where the player's pawns go along y
+// forward is where the player's pawns go along y
 func (c Color) forward() (int, error) {
-    switch c {
-    case White:
-        return -1, nil
-    case Black:
-        return 1, nil
-    default:
-        return 0, fmt.Errorf("invalid color: %d", c)
-    }
+	switch c {
+	case White:
+		return -1, nil
+	case Black:
+		return 1, nil
+	default:
+		return 0, fmt.Errorf("invalid color: %d", c)
+	}
 }
 
 // TODO: move this helper to utility.go.
@@ -183,8 +184,27 @@ func isCheck(board Board, turnColor Color, kingPosition [3]Coord) bool {
 func move(board *Board, sourceCoord, targetCoord Coord) error {
 	source := &board[sourceCoord.X][sourceCoord.Y]
 	target := &board[targetCoord.X][targetCoord.Y]
+
+	//castling also moves the rook
+	if source.figure == King && abs(targetCoord.X-sourceCoord.X) == 2 {
+		rookX := 0
+		rookTargetX := targetCoord.X + 1
+		if targetCoord.X > sourceCoord.X {
+			rookX = 7
+			rookTargetX = targetCoord.X - 1
+		}
+		rook := &board[rookX][sourceCoord.Y]
+		rookTarget := &board[rookTargetX][sourceCoord.Y]
+		rookTarget.figure, rookTarget.color = rook.figure, rook.color
+		rookTarget.hasMoved = true
+		rook.figure, rook.color = NoFigure, NoColor
+		rook.hasMoved = true
+	}
+
 	target.figure, target.color = source.figure, source.color
+	target.hasMoved = true
 	source.figure, source.color = NoFigure, NoColor
+	source.hasMoved = true
 
 	//pawn that reaches the last rank is promoted to a queen
 	if target.figure == Pawn && (targetCoord.Y == 0 || targetCoord.Y == 7) {
@@ -202,7 +222,7 @@ func isMoveLegal(targetCoord Coord, legalTargets []Coord) bool {
 	return false
 }
 
-//returns true if at least one piece has at least one legal target
+// returns true if at least one piece has at least one legal target
 func hasLegalTargets(board Board, turnColor Color, kingPosition [3]Coord) bool {
 	for x := 0; x < 8; x++ {
 		for y := 0; y < 8; y++ {
@@ -309,7 +329,7 @@ func getLegalTargets(board Board, source *Field, turnColor Color, kingPosition [
 					continue
 				}
 				//pawns move straight, capture diagonally, and may advance two
-				//squares only from their starting rank with a clear path.
+				//squares only from their starting horisontal with a clear path.
 				if dx == 0 && target.figure != NoFigure {
 					continue
 				}
@@ -346,30 +366,69 @@ func getLegalTargets(board Board, source *Field, turnColor Color, kingPosition [
 			}
 		}
 
+		//castling, the king and rook must not have moved, and the king
+		//can't castle out of,through, or into check
+		homeY := 0
+		if turnColor == White {
+			homeY = 7
+		}
+		if source.x == 4 && source.y == homeY && !source.hasMoved && !isCheck(board, turnColor, kingPosition) {
+			for _, rookX := range []int{0, 7} {
+				rook := &board[rookX][homeY]
+				if rook.figure != Rook || rook.color != turnColor || rook.hasMoved {
+					continue
+				}
+                //sign of stepX indicates the direction in which king'll castle
+				stepX := -1
+				targetX := 2
+				if rookX == 7 {
+					stepX = 1
+					targetX = 6
+				}
+
+                //if anything stands in the way, castling is not possible
+				for x := source.x + stepX; x != rookX; x += stepX {
+					if board[x][homeY].figure != NoFigure {
+						continue
+					}
+				}
+            
+                //a check on the intermediate square makes the castling illegal
+				if isCheckAfterMove(board, source, &board[source.x+stepX][homeY], kingPosition, turnColor) {
+					continue
+				}
+				appendIfLegal(targetX, homeY)
+			}
+		}
+
 	case Bishop, Rook, Queen:
 		directions := make([]Coord, 0, 8)
 		if source.figure == Bishop || source.figure == Queen {
+            //adding 4 diagonals
 			for dx := -1; dx <= 1; dx += 2 {
 				for dy := -1; dy <= 1; dy += 2 {
-					directions = append(directions, Coord{X: dx, Y: dy})
+					directions = append(directions, Coord{dx, dy})
 				}
 			}
 		}
 		if source.figure == Rook || source.figure == Queen {
-			directions = append(directions,
-				Coord{X: -1, Y: 0}, Coord{X: 1, Y: 0},
-				Coord{X: 0, Y: -1}, Coord{X: 0, Y: 1},
+            //adding 4 straight directions			
+            directions = append(directions,
+				Coord{-1, 0}, Coord{1, 0},
+				Coord{0, -1}, Coord{0, 1},
 			)
 		}
 		for _, direction := range directions {
-			for x, y := source.x+direction.X, source.y+direction.Y; (Coord{X: x, Y: y}).InBounds(); x, y = x+direction.X, y+direction.Y {
+            //increment x,y using vectors (direction) while they are in bounds
+			for x, y := source.x+direction.X, source.y+direction.Y; (Coord{x, y}).InBounds(); x, y = x+direction.X, y+direction.Y {
 				target := &board[x][y]
 				if !trivialMoveValidation(source, target, turnColor) {
 					break
 				}
 				if !isCheckAfterMove(board, source, target, kingPosition, turnColor) {
-					legalTargets = append(legalTargets, Coord{X: x, Y: y})
+					legalTargets = append(legalTargets, Coord{x, y})
 				}
+                //if there's a figure in the way, further checking is unnecessary
 				if target.figure != NoFigure {
 					break
 				}
@@ -383,12 +442,12 @@ func getLegalTargets(board Board, source *Field, turnColor Color, kingPosition [
 func isCheckAfterMove(board Board, source, target *Field, kingPosition [3]Coord, turnColor Color) bool {
 	boardAfterMove := board
 	move(&boardAfterMove,
-		Coord{X: source.x, Y: source.y},
-		Coord{X: target.x, Y: target.y},
+		Coord{source.x, source.y},
+		Coord{target.x, target.y},
 	)
 	movedTarget := boardAfterMove[target.x][target.y]
 	if movedTarget.figure == King {
-		kingPosition[movedTarget.color] = Coord{X: target.x, Y: target.y}
+		kingPosition[movedTarget.color] = Coord{target.x, target.y}
 	}
 	return isCheck(boardAfterMove, turnColor, kingPosition)
 }
@@ -465,18 +524,18 @@ func newGame() *Game {
 	return g
 }
 
-//generate a random token
+// generate a random token
 func newToken() string {
 	b := make([]byte, 32)
 	rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
-//playerColor finds the player by the X-Token header
+// playerColor finds the player by the X-Token header
 func (g *Game) playerColor(c *gin.Context) Color {
 	t := c.GetHeader("X-Token")
 	if t == "" {
-        //unidentified
+		//unidentified
 		return NoColor
 	}
 	if t == g.tokens[White] {
@@ -509,9 +568,9 @@ func (g *Game) joinGame(c *gin.Context) {
 		}
 		if b[0]%2 == 1 {
 			color = Black
-		} else {    
-            color = White
-        }
+		} else {
+			color = White
+		}
 	} else {
 		//the second player is of the opposite color.
 		if g.tokens[White] != "" {
@@ -530,8 +589,8 @@ func (g *Game) joinGame(c *gin.Context) {
 	fmt.Println(c.ClientIP() + " joined the game")
 }
 
-//readCoord does the checks /inputSource and /inputTarget share. If the input has to be
-//rejected it answers the request itself and returns false.
+// readCoord does the checks /inputSource and /inputTarget share. If the input has to be
+// rejected it answers the request itself and returns false.
 func (g *Game) readCoord(c *gin.Context) (Coord, bool) {
 	var pos Coord
 	if err := c.ShouldBindJSON(&pos); err != nil {
@@ -589,7 +648,7 @@ func (g *Game) inputTarget(c *gin.Context) {
 // play makes the move chosen with /inputSource and works out what it means for the opponent
 func (g *Game) play(target Coord) {
 	move(&g.board, g.source, target)
-    //if a player moves the king, update its coordinates
+	//if a player moves the king, update its coordinates
 	if g.board.At(target).figure == King {
 		g.kingPos[g.turn] = target
 	}
@@ -599,7 +658,7 @@ func (g *Game) play(target Coord) {
 
 	opponent := g.turn.opponent()
 	g.inCheck = isCheck(g.board, opponent, g.kingPos)
-    //if there are no legal moves, game is over
+	//if there are no legal moves, game is over
 	if !hasLegalTargets(g.board, opponent, g.kingPos) {
 		g.over = true
 		if g.inCheck {
@@ -611,7 +670,7 @@ func (g *Game) play(target Coord) {
 	g.turnChange.Broadcast()
 }
 
-//queryChanged blocks until it is the caller's turn (or the game is over)
+// queryChanged blocks until it is the caller's turn (or the game is over)
 func (g *Game) queryChanged(c *gin.Context) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
