@@ -64,12 +64,12 @@ Project consists of two parts: a server and a client. Running a server (server.g
 
 | Endpoint | Description |
 |---|---|
-| `POST /joinGame` | joins a player to the game and returns their color and unique idenfication token (the color is randomised) |
+| `POST /joinGame` | joins a player to the game and returns their color and unique identification token (the color is randomised) |
 | `POST /inputSource` | accepts the coordinates of the piece that is to be moved and server calculates its legal moves |
 | `POST /inputTarget` | accepts the coordinates of the square that the piece is to be moved to. In case the move is illegal, returns `invalid` |
 | `GET /getFigureBoard` | returns an [8][8] array of integers, that represent runes. They get translated into symbols on the client side |
 | `GET /getLegalBoard` | same as /getFigureBoard, but with legal moves of the chosen piece overlayed on top |
-| `GET /queryChanged` | returns an answer only when it's the player's turn (or the game is ) |
+| `GET /queryChanged` | returns an answer only when it's the player's turn (or the game is over) |
 | `GET /gameCondition` | returns whether the game is in normal condition, someone is in check, checkmate or it's a stalemate |
 
 identifier token is required for all of these endpoints besides the /joinGame
