@@ -17,11 +17,12 @@ A simple pet project with a terminal user-interface that lets you play chess onl
 - Legal move highlighting
 
 
-## WIP
+## What's next
 
 - Draw rules
 - En passant
 - Offering draw and resigning
+- Viewer mode
 - Promoting to pieces other than queen
 
 
