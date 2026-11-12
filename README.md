@@ -7,7 +7,7 @@ A simple pet project with a terminal user-interface that lets you play chess onl
 ## Screenshots
 
 ![app screenshot](https://i.postimg.cc/Qxc19CkT/chessscreenshot.png)
-
+![demo](demo.gif)
 
 ## Features
 
